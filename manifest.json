@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Alpha Balance",
+  "short_name": "Balance",
+  "version": "1.25.1",
+  "description": "Показує денний баланс і залишки повідомлень та листів на alpha.date.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://alpha.date/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://alpha.date/*"],
+      "js": ["chat-list-api-bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://alpha.date/*"],
+      "css": ["balance.css"],
+      "js": ["balance.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
