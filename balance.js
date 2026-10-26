@@ -60,7 +60,7 @@
   let personalChatSource = "all";
   const personalChatSnapshots = { all: null, chance: null };
   let personalChatPersistTimer = null;
-  const profilesPanelPlacements = { chat: null, personal: null, letter: null };
+  const profilesPanelPlacements = { chat: null, personal: null, letter: null, sender: null };
   let sourceFilterActionInFlight = false;
   const chatLimitsByUid = new Map();
   const personalPairKeys = new Set();
@@ -167,10 +167,22 @@
           <span class="alpha-balance-dot" aria-hidden="true"></span>
           <span>Balance</span>
         </div>
-        <output class="alpha-balance-value" aria-live="polite">…</output>
+        <div class="alpha-balance-actions">
+          <output class="alpha-balance-value" aria-live="polite">…</output>
+          <button class="alpha-balance-sign-out" type="button" title="Sign out" aria-label="Sign out">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 5H6v14h4M14 8l4 4-4 4M18 12H9"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="alpha-balance-history" aria-label="Історія нарахувань"></div>
     `;
+    widget.querySelector(".alpha-balance-sign-out")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      document.querySelector('[data-testid="bottom-menu-item-Sign out"]')?.click();
+    });
     renderHistory(widget);
     return widget;
   }
@@ -209,7 +221,9 @@
       ensureConversationShortcut();
       ensurePersonalQuickPanel();
       ensureLetterChatPanel();
+      ensureSenderChatPanel();
       ensureQuickNavigation();
+      ensureDashboardPanels();
       captureRenderedChatList();
       ensureProfilesPanelPlacement();
       ensureLeftMenuHidden();
@@ -226,14 +240,16 @@
 
   function updateQuickNavigationState(nav) {
     const personalPage = /^\/personal(?:\/|$)/.test(location.pathname);
-    const letterPage = /^\/letter(?:\/|$)/.test(location.pathname);
+    const frozenListPage = /^\/(?:letter|sender|operator-gifts)(?:\/|$)/.test(
+      location.pathname
+    );
     for (const item of QUICK_NAV_ITEMS) {
       const source = document.querySelector(`[data-testid="${item.testId}"]`);
       const button = nav?.querySelector(`[data-alpha-quick-nav="${item.key}"]`);
       if (!button) continue;
       const active = personalPage
         ? item.key === "personal" || item.key === personalChatSource
-        : letterPage
+        : frozenListPage
           ? item.key === personalChatSource
           : !!source && /(^|\s)active(?:-|\s|$)/.test(source.className || "");
       button.dataset.active = active ? "true" : "false";
@@ -277,6 +293,111 @@
       }
     }
     bindQuickNavigation(nav);
+  }
+
+  const QUICK_ACCESS_ITEMS = [
+    { icon: "camera", label: "Photo Studio" },
+    { icon: "download", label: "Downloader" },
+    { icon: "cut", label: "Cutter" },
+    { icon: "grid", label: "Censor" },
+    { icon: "chart", label: "Topics" },
+  ];
+
+  const TASK_CENTER_ITEMS = [
+    {
+      icon: "camera",
+      title: "Generate photo",
+      description: "Create 5 new photos for profile",
+      status: "Assigned",
+      tone: "assigned",
+    },
+    {
+      icon: "chart",
+      title: "Use profitable topic",
+      description: "Post using the suggested topic",
+      status: "In progress",
+      tone: "progress",
+    },
+    {
+      icon: "download",
+      title: "Download video",
+      description: "Download 3 videos from chat",
+      status: "Pending review",
+      tone: "review",
+    },
+  ];
+
+  function dashboardIcon(name) {
+    const paths = {
+      camera:
+        '<path d="M5 7h3l1.4-2h5.2L16 7h3v10H5z"/><circle cx="12" cy="12" r="3"/>',
+      download: '<path d="M12 4v10m-4-4 4 4 4-4M5 18h14"/>',
+      cut:
+        '<circle cx="6" cy="7" r="2.3"/><circle cx="6" cy="17" r="2.3"/><path d="m8 8 10 8m-10 0 10-8"/>',
+      grid:
+        '<circle cx="7" cy="7" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="17" cy="7" r="1"/><circle cx="7" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="17" cy="12" r="1"/><circle cx="7" cy="17" r="1"/><circle cx="12" cy="17" r="1"/><circle cx="17" cy="17" r="1"/>',
+      chart: '<path d="M5 18v-5m7 5V8m7 10V4"/>',
+      tasks: '<path d="M9 5h6m-8 2h10v13H7zM9 3h6v4H9z"/>',
+    };
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.grid}</svg>`;
+  }
+
+  function createQuickAccessPanel() {
+    const panel = document.createElement("section");
+    panel.id = "alpha-quick-access";
+    panel.className = "alpha-dashboard-card";
+    panel.innerHTML = `
+      <div class="alpha-dashboard-title">${dashboardIcon("grid")}<span>Quick access</span></div>
+      <div class="alpha-quick-access-grid">
+        ${QUICK_ACCESS_ITEMS.map(
+          (item) => `<div class="alpha-quick-access-item">${dashboardIcon(item.icon)}<span>${item.label}</span></div>`
+        ).join("")}
+      </div>
+    `;
+    return panel;
+  }
+
+  function createTaskCenterPanel() {
+    const panel = document.createElement("section");
+    panel.id = "alpha-task-center";
+    panel.className = "alpha-dashboard-card";
+    panel.innerHTML = `
+      <div class="alpha-dashboard-title">${dashboardIcon("tasks")}<span>Task center</span></div>
+      <div class="alpha-task-list">
+        ${TASK_CENTER_ITEMS.map(
+          (item) => `
+            <div class="alpha-task-item">
+              <span class="alpha-task-icon">${dashboardIcon(item.icon)}</span>
+              <span class="alpha-task-copy"><strong>${item.title}</strong><small>${item.description}</small></span>
+              <span class="alpha-task-status" data-tone="${item.tone}">${item.status}</span>
+              <span class="alpha-task-chevron">›</span>
+            </div>`
+        ).join("")}
+      </div>
+    `;
+    return panel;
+  }
+
+  function ensureDashboardPanels() {
+    const frozenSidebar =
+      document.getElementById("alpha-personal-sidebar") ||
+      document.getElementById("alpha-letter-sidebar") ||
+      document.getElementById("alpha-sender-sidebar");
+    const nativeBlock = Array.from(
+      document.querySelectorAll('[data-testid="chat-list-block"]')
+    ).find((element) => !element.closest('[data-alpha-personal-frozen-chat-block="true"]'));
+    const chatBlock = frozenSidebar?.querySelector('[data-testid="chat-list-block"]') || nativeBlock;
+    if (chatBlock && !chatBlock.querySelector(":scope > #alpha-quick-access")) {
+      chatBlock.append(createQuickAccessPanel());
+    }
+
+    const notificationsColumn = findNotificationsColumn();
+    if (
+      notificationsColumn &&
+      !notificationsColumn.querySelector(":scope > #alpha-task-center")
+    ) {
+      notificationsColumn.append(createTaskCenterPanel());
+    }
   }
 
   function bindQuickNavigation(nav) {
@@ -405,6 +526,35 @@
       sidebar = document.createElement("aside");
       sidebar.id = "alpha-letter-sidebar";
       host.append(sidebar);
+    }
+    renderPersonalChatBlock(sidebar);
+    return true;
+  }
+
+  function ensureSenderChatPanel() {
+    const isSenderPage = /^\/sender(?:\/|$)/.test(location.pathname);
+    const isGiftsPage = /^\/operator-gifts(?:\/|$)/.test(location.pathname);
+    if (!isSenderPage && !isGiftsPage) {
+      document.querySelectorAll("#alpha-sender-sidebar").forEach((sidebar) => sidebar.remove());
+      for (const attribute of ["data-alpha-sender-layout", "data-alpha-sender-main-column"]) {
+        document.querySelectorAll(`[${attribute}]`).forEach((element) =>
+          element.removeAttribute(attribute)
+        );
+      }
+      return false;
+    }
+    const mainColumn = isSenderPage
+      ? document.querySelector('[class*="clmn_sender"]')
+      : document.querySelector('[class*="children_wrap_redesign"] > [class*="page-"]');
+    const host = mainColumn?.parentElement;
+    if (!host) return false;
+    host.setAttribute("data-alpha-sender-layout", "true");
+    mainColumn.setAttribute("data-alpha-sender-main-column", "true");
+    let sidebar = host.querySelector(":scope > #alpha-sender-sidebar");
+    if (!sidebar) {
+      sidebar = document.createElement("aside");
+      sidebar.id = "alpha-sender-sidebar";
+      mainColumn.before(sidebar);
     }
     renderPersonalChatBlock(sidebar);
     return true;
@@ -761,6 +911,21 @@
     });
   }
 
+  function waitForFilterState(type, desiredState, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const startedAt = Date.now();
+      const check = () => {
+        const filter = nativeChatFilter();
+        if (filter && filterControlState(type, filter) === desiredState) {
+          return resolve(true);
+        }
+        if (Date.now() - startedAt >= timeoutMs) return resolve(false);
+        setTimeout(check, 60);
+      };
+      check();
+    });
+  }
+
   async function activateSourceFilter(type, desiredState) {
     if (sourceFilterActionInFlight || typeof desiredState !== "boolean") return;
     sourceFilterActionInFlight = true;
@@ -768,21 +933,28 @@
       const sourceSection = personalChatSource === "chance" ? "chance" : "all";
       const sourceItem = QUICK_NAV_ITEMS.find((item) => item.key === sourceSection);
       const sourceButton = sourceItem
-        ? document.querySelector(`[data-testid="${sourceItem.testId}"]`)
+        ? Array.from(document.querySelectorAll(`[data-testid="${sourceItem.testId}"]`)).find(
+            (element) => !element.closest('[data-alpha-personal-frozen-chat-block="true"]')
+          )
         : null;
       if (!sourceButton) return;
 
       sourceButton.click();
       const filter = await waitForNativeFilter(type);
-      if (!filter || filterControlState(type, filter) === desiredState) return;
+      if (!filter) return;
 
-      if (type === "online") {
-        const online = filter.querySelector('[data-testid="online"]');
-        const target = online?.querySelector("label") || online?.querySelector("input");
-        target?.click();
-      } else if (type === "freeze") {
-        filter.querySelector('[data-testid="freeze-cube"]')?.click();
+      if (filterControlState(type, filter) !== desiredState) {
+        if (type === "online") {
+          const online = filter.querySelector('[data-testid="online"]');
+          const target = online?.querySelector("label") || online?.querySelector("input");
+          target?.click();
+        } else if (type === "freeze") {
+          filter.querySelector('[data-testid="freeze-cube"]')?.click();
+        }
       }
+      await waitForFilterState(type, desiredState);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      captureRenderedChatList();
     } finally {
       setTimeout(() => {
         sourceFilterActionInFlight = false;
@@ -890,17 +1062,23 @@
     }
 
     const search = sidebar.querySelector('[data-testid="idOrName"]');
-    const online = sidebar.querySelector('[data-testid="online"] input');
+    const onlineControl = sidebar.querySelector('[data-testid="online"]');
+    const online = onlineControl?.querySelector("input");
     const freeze = sidebar.querySelector('[data-testid="freeze-cube"]');
     if (search && search.dataset.alphaFrozenBound !== "true") {
       search.dataset.alphaFrozenBound = "true";
       search.addEventListener("input", () => applyFrozenChatFilters(sidebar));
     }
-    if (online && online.dataset.alphaFrozenBound !== "true") {
-      online.dataset.alphaFrozenBound = "true";
-      online.addEventListener("change", (event) => {
+    if (onlineControl && online && onlineControl.dataset.alphaFrozenBound !== "true") {
+      onlineControl.dataset.alphaFrozenBound = "true";
+      onlineControl.addEventListener("click", (event) => {
+        const clickedControl = event.target === online || onlineControl.contains(event.target);
+        if (!clickedControl) return;
+        event.preventDefault();
         event.stopPropagation();
-        void activateSourceFilter("online", !!online.checked);
+        const desiredState = !online.checked;
+        online.checked = desiredState;
+        void activateSourceFilter("online", desiredState);
       });
     }
     if (freeze && freeze.dataset.alphaFrozenBound !== "true") {
@@ -948,10 +1126,13 @@
     );
     const personalSpacer =
       document.querySelector("#alpha-personal-sidebar #alpha-profiles-panel-spacer") ||
-      document.querySelector("#alpha-personal-heart-spacer");
+      document.querySelector("#alpha-personal-sidebar #alpha-personal-heart-spacer");
     const letterSpacer =
       document.querySelector("#alpha-letter-sidebar #alpha-profiles-panel-spacer") ||
       document.querySelector("#alpha-letter-sidebar #alpha-personal-heart-spacer");
+    const senderSpacer =
+      document.querySelector("#alpha-sender-sidebar #alpha-profiles-panel-spacer") ||
+      document.querySelector("#alpha-sender-sidebar #alpha-personal-heart-spacer");
     if (!profilesButton) return false;
 
     const profileCard = profilesButton.parentElement?.querySelector(
@@ -962,7 +1143,7 @@
     const profilesPanel = profileCard || profilesButton;
     const panelMode = profileCard ? "profile" : "menu";
     const panelHeight = profileCard
-      ? Math.max(166, Math.min(220, Math.ceil(profileCard.scrollHeight || 0)))
+      ? Math.ceil(profileCard.getBoundingClientRect().height)
       : 68;
 
     document.querySelectorAll('[data-alpha-profiles-panel="true"]').forEach((element) => {
@@ -980,21 +1161,18 @@
 
     const isPersonalPage = /^\/personal(?:\/|$)/.test(location.pathname);
     const isLetterPage = /^\/letter(?:\/|$)/.test(location.pathname);
+    const isSenderPage = /^\/(?:sender|operator-gifts)(?:\/|$)/.test(location.pathname);
+    const isFrozenPage = isPersonalPage || isLetterPage || isSenderPage;
     const isChatListPage = !!currentChatLimitsMode();
-    const placementKey = isPersonalPage ? "personal" : isLetterPage ? "letter" : "chat";
-    const regularTarget = !isPersonalPage && !isLetterPage && filtersContainer && quickNavHost;
-    const targetSpacer = isPersonalPage
-      ? personalSpacer
-      : isLetterPage
-        ? letterSpacer
-        : regularTarget
-          ? filtersContainer.querySelector("#alpha-profiles-panel-spacer")
-          : null;
-    const hasTarget = isPersonalPage
-      ? !!personalSpacer
-      : isLetterPage
-        ? !!letterSpacer
-        : !!regularTarget;
+    const placementKey = isPersonalPage ? "personal" : isLetterPage ? "letter" : isSenderPage ? "sender" : "chat";
+    const regularTarget = !isFrozenPage && filtersContainer && quickNavHost;
+    const frozenSpacer = isPersonalPage ? personalSpacer : isLetterPage ? letterSpacer : senderSpacer;
+    const targetSpacer = isFrozenPage
+      ? frozenSpacer
+      : regularTarget
+        ? filtersContainer.querySelector("#alpha-profiles-panel-spacer")
+        : null;
+    const hasTarget = isFrozenPage ? !!frozenSpacer : !!regularTarget;
     if (hasTarget) {
       profilesPanel.removeAttribute("data-alpha-profiles-panel-hidden");
     } else {
@@ -1002,7 +1180,7 @@
       profilesPanel.setAttribute("data-alpha-profiles-panel-hidden", "true");
     }
     if (!hasTarget) {
-      if (!isPersonalPage && !isLetterPage && !isChatListPage) {
+      if (!isFrozenPage && !isChatListPage) {
         document.getElementById("alpha-profiles-panel-spacer")?.remove();
       }
       return false;
@@ -1010,7 +1188,7 @@
 
     profilesPanel.setAttribute("data-alpha-profiles-panel", "true");
     let spacer = targetSpacer;
-    if (!isPersonalPage && !isLetterPage && !spacer) {
+    if (!isFrozenPage && !spacer) {
       if (!filtersContainer || !quickNavHost) {
         profilesPanel.setAttribute("data-alpha-profiles-panel-hidden", "true");
         return false;
@@ -1048,7 +1226,10 @@
 
   function ensureLeftMenuHidden() {
     const menuList = document.querySelector('[data-testid="main-menu-list"]');
-    const column = menuList?.closest?.(".clmn_1");
+    // On the admin home screen the menu list is not mounted yet, but its
+    // column still keeps the native 200px width and squeezes the manage bar.
+    const column = menuList?.closest?.(".clmn_1") || document.querySelector(".clmn_1");
+    const hasVisibleMenu = !!menuList && getComputedStyle(menuList).visibility !== "hidden";
     const pageWrapper = column?.closest?.('[class*="wchat_wrap_redesign"]');
     document
       .querySelectorAll('[data-alpha-left-menu-hidden="true"]')
@@ -1062,6 +1243,8 @@
       });
     if (!column) return false;
     column.setAttribute("data-alpha-left-menu-hidden", "true");
+    if (hasVisibleMenu) column.removeAttribute("data-alpha-left-menu-empty");
+    else column.setAttribute("data-alpha-left-menu-empty", "true");
     pageWrapper?.setAttribute("data-alpha-main-expanded", "true");
 
     for (const child of column.children) {
@@ -1646,7 +1829,9 @@
     ensureConversationShortcut();
     ensurePersonalQuickPanel();
     ensureLetterChatPanel();
+    ensureSenderChatPanel();
     ensureQuickNavigation();
+    ensureDashboardPanels();
     ensureProfilesPanelPlacement();
     ensureLeftMenuHidden();
     await Promise.all([

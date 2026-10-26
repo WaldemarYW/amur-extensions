@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Alpha Balance",
-  "short_name": "Balance",
-  "version": "1.25.1",
+  "name": "amur extensions",
+  "short_name": "amur",
+  "version": "1.26.0",
   "description": "Показує денний баланс і залишки повідомлень та листів на alpha.date.",
   "permissions": ["storage"],
   "host_permissions": ["https://alpha.date/*"],
@@ -16,7 +16,7 @@
     {
       "matches": ["https://alpha.date/*"],
       "css": ["balance.css"],
-      "js": ["balance.js"],
+      "js": ["balance.js", "autolike.js"],
       "run_at": "document_idle"
     }
   ]

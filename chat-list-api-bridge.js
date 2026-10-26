@@ -8,6 +8,8 @@
   const REPLAY_TYPE = "ALPHA_BALANCE_CHAT_LIST_REPLAY_REQUEST";
   const PERSONAL_RESPONSE_TYPE = "ALPHA_BALANCE_PERSONAL_INVITES";
   const PERSONAL_REPLAY_TYPE = "ALPHA_BALANCE_PERSONAL_INVITES_REPLAY_REQUEST";
+  const AUTOLIKE_EVENT_TYPE = "AMUR_AUTOLIKE_INCOMING_REACTION";
+  const seenReactions = new Map();
   let personalEntries = null;
   const pagesByMode = new Map([
     ["all", new Map()],
@@ -213,6 +215,119 @@
     }
     return originalSend.call(this, body);
   };
+
+  function findFirst(value, keys, visited = new WeakSet()) {
+    if (!value || typeof value !== "object" || visited.has(value)) return null;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = findFirst(item, keys, visited);
+        if (found != null) return found;
+      }
+      return null;
+    }
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(value, key) && value[key] != null) {
+        return value[key];
+      }
+    }
+    for (const child of Object.values(value)) {
+      const found = findFirst(child, keys, visited);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  function postIncomingReaction(payload) {
+    const key = [
+      payload.notification_id,
+      payload.chat_uid,
+      payload.sender_external_id,
+      payload.recipient_external_id,
+      payload.created_at,
+    ].join(":");
+    const now = Date.now();
+    if (seenReactions.has(key) && now - seenReactions.get(key) < 10_000) return;
+    seenReactions.set(key, now);
+    if (seenReactions.size > 1000) {
+      for (const [item, timestamp] of seenReactions) {
+        if (now - timestamp > 300_000) seenReactions.delete(item);
+      }
+    }
+    window.postMessage(
+      { source: MESSAGE_SOURCE, type: AUTOLIKE_EVENT_TYPE, payload },
+      location.origin
+    );
+  }
+
+  function inspectSocketMessage(data) {
+    try {
+      let parsed = data;
+      if (typeof parsed === "string") {
+        let text = parsed.trim();
+        if (text.startsWith("42")) text = text.slice(2);
+        if (!text.startsWith("{") && !text.startsWith("[")) return;
+        parsed = JSON.parse(text);
+      }
+      if (!parsed || typeof parsed !== "object") return;
+
+      const action = Array.isArray(parsed) ? String(parsed[0] || "") : "";
+      const root = Array.isArray(parsed) && parsed.length > 1 ? parsed[1] : parsed;
+      const source = root?.message_object && typeof root.message_object === "object"
+        ? root.message_object
+        : root;
+      const socketType = String(
+        findFirst(source, ["message_type", "messageType", "type"]) || ""
+      ).toUpperCase();
+      const normalizedAction = String(findFirst(root, ["action"]) || action).toUpperCase();
+      const messageType = normalizedAction === "MESSAGE"
+        ? socketType
+        : normalizedAction || socketType;
+      const isMale = Number(findFirst(source, ["is_male", "isMale"]));
+      const incomingMaleLike = messageType === "SENT_LIKE" && isMale === 1;
+      if (messageType !== "LIKED" && messageType !== "SENT_WINK" && !incomingMaleLike) {
+        return;
+      }
+
+      postIncomingReaction({
+        message_type: messageType,
+        is_male: Number.isFinite(isMale) ? isMale : null,
+        chat_uid:
+          findFirst(source, ["chat_uid", "chatUid"]) ||
+          findFirst(root, ["chat_uid", "chatUid"]) ||
+          "",
+        sender_external_id: findFirst(source, ["sender_external_id", "senderExternalId"]),
+        recipient_external_id: findFirst(source, ["recipient_external_id", "recipientExternalId"]),
+        female_id: findFirst(root, ["female_id", "femaleId", "female_external_id"]),
+        male_external_id: findFirst(root, ["male_external_id", "maleExternalId", "male_id"]),
+        notification_id:
+          findFirst(root, ["notification_id", "notificationId"]) ||
+          findFirst(source, ["notification_id", "notificationId", "id"]) ||
+          "",
+        created_at:
+          findFirst(source, ["created_at", "createdAt", "date_created"]) ||
+          new Date().toISOString(),
+      });
+    } catch {}
+  }
+
+  const NativeWebSocket = window.WebSocket;
+  if (typeof NativeWebSocket === "function") {
+    window.WebSocket = function AmurWebSocket(url, protocols) {
+      const socket = protocols === undefined
+        ? new NativeWebSocket(url)
+        : new NativeWebSocket(url, protocols);
+      socket.addEventListener("message", (event) => inspectSocketMessage(event.data));
+      return socket;
+    };
+    window.WebSocket.prototype = NativeWebSocket.prototype;
+    Object.defineProperties(window.WebSocket, {
+      CONNECTING: { value: NativeWebSocket.CONNECTING },
+      OPEN: { value: NativeWebSocket.OPEN },
+      CLOSING: { value: NativeWebSocket.CLOSING },
+      CLOSED: { value: NativeWebSocket.CLOSED },
+    });
+  }
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.origin !== location.origin) return;
